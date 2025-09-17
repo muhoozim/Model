@@ -810,59 +810,72 @@ app_theme <- bslib::bs_theme(
   base_font = bslib::font_google("Inter")
 )
 
-ui <- page_navbar(
-  title = "HIV Transmission Model Dashboard",
-  theme = app_theme,
-  sidebar = sidebar(
-    h4("Simulation Settings"),
-    textInput("param_dir", "Parameter folder", value = app_data_dir()),
-    numericInput("trials", "Trials", value = 50, min = 1, step = 1),
-    numericInput("sgroup", "Subgroups", value = 25, min = 5, step = 1),
-    sliderInput("years", "Timeline", min = 2000, max = 2035, value = c(2004, 2020), sep = ""),
+ui <- tagList(
+  tags$head(
+    tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
+  ),
+  page_navbar(
+    title = "HIV Transmission Model Dashboard",
+    theme = app_theme,
+    sidebar = sidebar(
+      h4("Simulation Settings"),
+      textInput("param_dir", "Parameter folder", value = app_data_dir()),
+      numericInput("trials", "Trials", value = 50, min = 1, step = 1),
+      numericInput("sgroup", "Subgroups", value = 25, min = 5, step = 1),
+      sliderInput("years", "Timeline", min = 2000, max = 2035, value = c(2004, 2020), sep = ""),
     numericInput("seed", "Random seed", value = 1, min = 0, step = 1),
     actionButton("run", "Run Simulation", class = "btn-primary"),
     hr(),
     uiOutput("files_status")
   ),
-  navset_tab(
-    nav_panel("Overview",
-              fluidRow(
-                column(3, uiOutput("card_prev")),
-                column(3, uiOutput("card_inc")),
-                column(3, uiOutput("card_vs")),
-                column(3, uiOutput("card_art"))
-              ),
-              hr(),
-              tabsetPanel(
-                tabPanel("Prevalence",
-                         withSpinner(plotlyOutput("plot_prev", height = 360))
+    navset_tab(
+      nav_panel("Overview",
+                fluidRow(
+                  column(3, uiOutput("card_prev")),
+                  column(3, uiOutput("card_inc")),
+                  column(3, uiOutput("card_vs")),
+                  column(3, uiOutput("card_art"))
                 ),
-                tabPanel("Incidence",
-                         withSpinner(plotlyOutput("plot_inc", height = 360))
-                ),
-                tabPanel("On ART & VS",
-                         withSpinner(plotlyOutput("plot_art", height = 360))
-                )
-              )
-    ),
-    nav_panel("Calibration",
-              h5("Best 50 Trials by Goodness-of-Fit (lower is better)"),
-              withSpinner(DTOutput("tbl_top50")),
-              br(),
-              downloadButton("download_outcomes", "Download outcomes.csv")
-    ),
-    nav_panel("About",
-              div(class = "p-3",
-                  h4("About this app"),
-                  p("This app rewrites the original HIV transmission dynamic model with improved reliability, explicit timelines, and a modern dashboard UI. Place your parameter CSVs in the ", code("data/"), " folder next to app.R, or change the folder path in the sidebar."),
-                  tags$ul(
-                    tags$li("Deterministic & reproducible: controlled seed and timeline"),
-                    tags$li("Safer I/O: no setwd(), errors surface in UI"),
-                    tags$li("Interactive visuals: hover, zoom, and compare trials"),
-                    tags$li("Downloadable results for further analysis")
+                hr(),
+                tabsetPanel(
+                  tabPanel("Prevalence",
+                           div(class = "with-spinner",
+                               withSpinner(plotlyOutput("plot_prev", height = 360))
+                           )
                   ),
-                  p("Tip: To speed up prototyping, start with a small number of trials and a shorter timeline, then scale up.")
-              )
+                  tabPanel("Incidence",
+                           div(class = "with-spinner",
+                               withSpinner(plotlyOutput("plot_inc", height = 360))
+                           )
+                  ),
+                  tabPanel("On ART & VS",
+                           div(class = "with-spinner",
+                               withSpinner(plotlyOutput("plot_art", height = 360))
+                           )
+                  )
+                )
+      ),
+      nav_panel("Calibration",
+                h5("Best 50 Trials by Goodness-of-Fit (lower is better)"),
+                div(class = "with-spinner",
+                    withSpinner(DTOutput("tbl_top50"))
+                ),
+                br(),
+                downloadButton("download_outcomes", "Download outcomes.csv")
+      ),
+      nav_panel("About",
+                div(class = "p-3",
+                    h4("About this app"),
+                    p("This app rewrites the original HIV transmission dynamic model with improved reliability, explicit timelines, and a modern dashboard UI. Place your parameter CSVs in the ", code("data/"), " folder next to app.R, or change the folder path in the sidebar."),
+                    tags$ul(
+                      tags$li("Deterministic & reproducible: controlled seed and timeline"),
+                      tags$li("Safer I/O: no setwd(), errors surface in UI"),
+                      tags$li("Interactive visuals: hover, zoom, and compare trials"),
+                      tags$li("Downloadable results for further analysis")
+                    ),
+                    p("Tip: To speed up prototyping, start with a small number of trials and a shorter timeline, then scale up.")
+                )
+      )
     )
   )
 )
@@ -908,11 +921,11 @@ server <- function(input, output, session) {
   # Value cards ----------------------------------------------------------------
   make_card <- function(title, value, suffix = "", good = TRUE) {
     val <- if (is.na(value)) "–" else format(value, big.mark = ",", scientific = FALSE, digits = 3)
-    bg <- if (good) "#e8fff3" else "#fff0f0"
-    col <- if (good) "#2e7d32" else "#b71c1c"
-    div(style = paste("background:", bg, "; border-radius: 12px; padding: 16px;"),
-        h6(title),
-        div(style = paste("font-size: 28px; font-weight: 700; color:", col), paste0(val, suffix))
+    status_class <- if (good) "value-card--good" else "value-card--bad"
+    div(
+      class = paste("value-card", status_class),
+      div(class = "value-card__title", title),
+      div(class = "value-card__value", paste0(val, suffix))
     )
   }
   
