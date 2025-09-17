@@ -48,7 +48,8 @@ FILES_REQUIRED <- c(
   "RW_p_condomUse.csv",
   "RW_p_VSEffect.csv",
   "RW_n_sexact.csv",
-  # populations & composition
+  # populations & composition (RW_Pop.csv & RW_Pop_CD4.csv shipped as
+  # placeholder copies — update these with final numbers when available)
   "RW_Pop.csv",
   "RW_Pop_HIVPrev_2.csv",
   "RW_Pop_CD4.csv",
@@ -71,11 +72,90 @@ FILES_REQUIRED <- c(
 # ---- Helpers -----------------------------------------------------------------
 app_data_dir <- function() file.path(getwd(), "data")
 
+ensure_placeholder_csv <- function(path, name) {
+  # Minimal templated structures so the app can run even if final inputs
+  # are absent. Replace these numbers with study-specific values later.
+  dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
+  placeholder <- switch(
+    name,
+    "RW_Pop.csv" = tibble::tibble(
+      Group = seq_len(25),
+      Total = rep(1000, 25)
+    ),
+    "RW_Pop_CD4.csv" = tibble::tibble(
+      State = c(
+        paste0("unlink_bin_", 1:3),
+        paste0("link_bin_", 1:3),
+        paste0("art_vs_bin_", 1:3),
+        paste0("art_not_vs_bin_", 1:3)
+      ),
+      Mean = c(rep(0.25, 3), rep(0.25, 3), rep(0.25, 3), rep(0.25, 3))
+    ),
+    "Targets_00_15-54_new.csv" = {
+      years <- seq(2004, 2010)
+      cols <- c(
+        "Prevalence", "Prevalence_LB", "Prevalence_UB",
+        "Prevalence_F", "Prevalence_LB_F", "Prevalence_UB_F",
+        "Prevalence_M", "Prevalence_LB_M", "Prevalence_UB_M",
+        "Incidence", "Incidence_LB", "Incidence_UB",
+        "Incidence_F", "Incidence_F_LB", "Incidence_F_UB",
+        "Incidence_M", "Incidence_M_LB", "Incidence_M_UB",
+        "Percent_on_ART_total", "Percent_on_ART_total_LB", "Percent_on_ART_total_UB",
+        "Percent_on_ART_Female", "Percent_on_ART_Female_LB", "Percent_on_ART_Female_UB",
+        "Percent_on_ART_Male", "Percent_on_ART_Male_LB", "Percent_on_ART_Male_UB",
+        "Percent_VS_total", "Percent_VS_total_LB", "Percent_VS_total_UB",
+        "Percent_VS_Female", "Percent_VS_Female_LB", "Percent_VS_Female_UB",
+        "Percent_VS_Male", "Percent_VS_Male_LB", "Percent_VS_Male_UB"
+      )
+      placeholder_cols <- lapply(cols, function(...) rep(NA_real_, length(years)))
+      names(placeholder_cols) <- cols
+      tibble::as_tibble(c(list(Year = years), placeholder_cols))
+    },
+    "Targets_01.csv" = {
+      years <- seq(2004, 2010)
+      cols <- c(
+        "Prevalence", "Prevalence_LB", "Prevalence_UB",
+        "Prevalence_F", "Prevalence_LB_F", "Prevalence_UB_F",
+        "Prevalence_M", "Prevalence_LB_M", "Prevalence_UB_M",
+        "Percent_VS_total", "Percent_VS_total_LB", "Percent_VS_total_UB",
+        "Percent_VS_Male", "Percent_VS_Male_LB", "Percent_VS_Male_UB",
+        "Percent_VS_Female", "Percent_VS_Female_LB", "Percent_VS_Female_UB",
+        "P_ART_All", "P_ART_All_LB", "P_ART_All_UB",
+        "P_ART_All_F", "P_ART_All_F_LB", "P_ART_All_F_UB",
+        "P_ART_All_M", "P_ART_All_M_LB", "P_ART_All_M_UB",
+        "P_ART_All_F_young", "P_ART_All_F_young_LB", "P_ART_All_F_young_UB"
+      )
+      placeholder_cols <- lapply(cols, function(...) rep(NA_real_, length(years)))
+      names(placeholder_cols) <- cols
+      tibble::as_tibble(c(list(Year = years), placeholder_cols))
+    },
+    NULL
+  )
+  if (is.null(placeholder)) return(FALSE)
+  readr::write_csv(placeholder, path)
+  message(sprintf(
+    "Created placeholder CSV for %s. Update %s with calibrated data when available (placeholder rows contain neutral NA values).",
+    name, path
+  ))
+  TRUE
+}
+
 read_params <- function(dir) {
   paths <- setNames(file.path(dir, FILES_REQUIRED), FILES_REQUIRED)
   missing <- names(paths)[!file.exists(paths)]
   if (length(missing)) {
-    stop(sprintf("Missing parameter files in '%s':\n- %s", dir, paste(missing, collapse = "\n- ")), call. = FALSE)
+    purrr::walk(missing, ~ensure_placeholder_csv(paths[.x], .x))
+  }
+  still_missing <- names(paths)[!file.exists(paths)]
+  if (length(still_missing)) {
+    stop(
+      sprintf(
+        "Missing parameter files in '%s':\n- %s",
+        dir,
+        paste(still_missing, collapse = "\n- ")
+      ),
+      call. = FALSE
+    )
   }
   lapply(paths, readr::read_csv, show_col_types = FALSE)
 }
@@ -162,6 +242,7 @@ simulate_model <- function(params,
   
   # For dashboard outputs, we’ll collect summary per-month and per-year stats
   out_list <- vector("list", length = trials)
+  yearly_list <- vector("list", length = trials)
   
   for (t in seq_len(trials)) {
     # ----------------------
@@ -726,13 +807,18 @@ simulate_model <- function(params,
     N_total      <- colSums(N)
     S_total      <- colSums(S)
     V_total      <- colSums(V)
-    On_ART_total <- colSums(V + X[,,21:24])
+    V_F_total    <- colSums(V[idxF, , drop = FALSE])
+    V_M_total    <- colSums(V[idxM, , drop = FALSE])
+    On_ART_mat <- V + apply(X[,,21:24], c(1,2), sum)
+    On_ART_total <- colSums(On_ART_mat)
     Diagnosed_total <- colSums(X[,,5:24])
     
     N_F_total    <- colSums(N[idxF, , drop = FALSE])
     S_F_total    <- colSums(S[idxF, , drop = FALSE])
     N_M_total    <- colSums(N[idxM, , drop = FALSE])
     S_M_total    <- colSums(S[idxM, , drop = FALSE])
+    On_ART_F_total <- colSums(On_ART_mat[idxF, , drop = FALSE])
+    On_ART_M_total <- colSums(On_ART_mat[idxM, , drop = FALSE])
     
     NI_total     <- colSums(NI)
     NI_F_total   <- colSums(NI[idxF, , drop = FALSE])
@@ -740,13 +826,34 @@ simulate_model <- function(params,
     
     # Yearly slices (take every 12th month)
     take_years <- seq(1, generations, by = 12)
-    Prevalence_total_y <- (N_total[take_years])/(N_total[take_years] + S_total[take_years])
-    Prevalence_F_y     <- (N_F_total[take_years])/(N_F_total[take_years] + S_F_total[take_years])
-    Prevalence_M_y     <- (N_M_total[take_years])/(N_M_total[take_years] + S_M_total[take_years])
-    
-    NI_total_y <- zoo::rollapply(NI_total, 12, sum, by = 12, align = "right")
     S_total_y  <- S_total[take_years]
+    S_F_total_y <- S_F_total[take_years]
+    S_M_total_y <- S_M_total[take_years]
+    N_total_y <- N_total[take_years]
+    N_F_total_y <- N_F_total[take_years]
+    N_M_total_y <- N_M_total[take_years]
+    Prevalence_total_y <- N_total_y / (N_total_y + S_total_y)
+    Prevalence_F_y     <- N_F_total_y / (N_F_total_y + S_F_total_y)
+    Prevalence_M_y     <- N_M_total_y / (N_M_total_y + S_M_total_y)
+
+    NI_total_y <- zoo::rollapply(NI_total, 12, sum, by = 12, align = "right")
+    NI_F_total_y <- zoo::rollapply(NI_F_total, 12, sum, by = 12, align = "right")
+    NI_M_total_y <- zoo::rollapply(NI_M_total, 12, sum, by = 12, align = "right")
     Incidence_total_y <- NI_total_y / pmax(1e-9, S_total_y)
+    Incidence_F_y <- NI_F_total_y / pmax(1e-9, S_F_total_y)
+    Incidence_M_y <- NI_M_total_y / pmax(1e-9, S_M_total_y)
+    On_ART_total_y <- On_ART_total[take_years]
+    On_ART_F_total_y <- On_ART_F_total[take_years]
+    On_ART_M_total_y <- On_ART_M_total[take_years]
+    V_total_y <- V_total[take_years]
+    V_F_total_y <- V_F_total[take_years]
+    V_M_total_y <- V_M_total[take_years]
+    On_ART_total_pct_y <- On_ART_total_y / pmax(1e-9, N_total_y) * 100
+    On_ART_F_total_pct_y <- On_ART_F_total_y / pmax(1e-9, N_F_total_y) * 100
+    On_ART_M_total_pct_y <- On_ART_M_total_y / pmax(1e-9, N_M_total_y) * 100
+    VS_total_pct_y <- V_total_y / pmax(1e-9, N_total_y) * 100
+    VS_F_total_pct_y <- V_F_total_y / pmax(1e-9, N_F_total_y) * 100
+    VS_M_total_pct_y <- V_M_total_y / pmax(1e-9, N_M_total_y) * 100
     
     # Minimal GOF proxy (sum of relative deviations on prevalence & incidence)
     pd_prev_total <- sum(abs(Prevalence_total_y - Target_all$Prevalence[seq_len(nyears)]) / pmax(1e-9, Target_all$Prevalence[seq_len(nyears)]), na.rm = TRUE)
@@ -784,22 +891,152 @@ simulate_model <- function(params,
         rep(NA_real_, 11),
         zoo::rollapply(NI_total, width = 12, FUN = sum, align = "right")
       ) / pmax(1e-9, S_total))
+    yearly_list[[t]] <- bind_rows(
+      tibble(
+        trial = t,
+        group = "Total",
+        year = years,
+        prevalence = Prevalence_total_y * 100,
+        incidence = Incidence_total_y,
+        on_art_count = On_ART_total_y,
+        on_art_pct = On_ART_total_pct_y,
+        vs_pct = VS_total_pct_y,
+        on_art = On_ART_total_y
+      ),
+      tibble(
+        trial = t,
+        group = "Female",
+        year = years,
+        prevalence = Prevalence_F_y * 100,
+        incidence = Incidence_F_y,
+        on_art_count = On_ART_F_total_y,
+        on_art_pct = On_ART_F_total_pct_y,
+        vs_pct = VS_F_total_pct_y,
+        on_art = On_ART_F_total_y
+      ),
+      tibble(
+        trial = t,
+        group = "Male",
+        year = years,
+        prevalence = Prevalence_M_y * 100,
+        incidence = Incidence_M_y,
+        on_art_count = On_ART_M_total_y,
+        on_art_pct = On_ART_M_total_pct_y,
+        vs_pct = VS_M_total_pct_y,
+        on_art = On_ART_M_total_y
+      )
+    )
   } # end trials
-  
+
   Prevalence = N_total / (N_total + S_total)
   Incidence  = c(
     rep(NA_real_, 11),
     zoo::rollapply(NI_total, width = 12, FUN = sum, align = "right")
   ) / pmax(1e-9, S_total)
-  
-  
-  
+
+
+
   list(
     trials = trials,
     generations = generations,
     years = years,
     pd_top50 = as.data.frame(pd_top50),
-    outcomes = bind_rows(out_list)
+    outcomes = bind_rows(out_list),
+    yearly = bind_rows(yearly_list),
+    targets = list(
+      prevalence = bind_rows(
+        tibble(
+          group = "Total",
+          year = Target_all$Year,
+          target = Target_all$Prevalence * 100,
+          target_lb = Target_all$Prevalence_LB * 100,
+          target_ub = Target_all$Prevalence_UB * 100
+        ),
+        tibble(
+          group = "Female",
+          year = Target_all$Year,
+          target = Target_all$Prevalence_F * 100,
+          target_lb = Target_all$Prevalence_LB_F * 100,
+          target_ub = Target_all$Prevalence_UB_F * 100
+        ),
+        tibble(
+          group = "Male",
+          year = Target_all$Year,
+          target = Target_all$Prevalence_M * 100,
+          target_lb = Target_all$Prevalence_LB_M * 100,
+          target_ub = Target_all$Prevalence_UB_M * 100
+        )
+      ),
+      incidence = bind_rows(
+        tibble(
+          group = "Total",
+          year = Target_all$Year,
+          target = Target_all$Incidence,
+          target_lb = Target_all$Incidence_LB,
+          target_ub = Target_all$Incidence_UB
+        ),
+        tibble(
+          group = "Female",
+          year = Target_all$Year,
+          target = Target_all$Incidence_F,
+          target_lb = Target_all$Incidence_F_LB,
+          target_ub = Target_all$Incidence_F_UB
+        ),
+        tibble(
+          group = "Male",
+          year = Target_all$Year,
+          target = Target_all$Incidence_M,
+          target_lb = Target_all$Incidence_M_LB,
+          target_ub = Target_all$Incidence_M_UB
+        )
+      ),
+      art = bind_rows(
+        tibble(
+          group = "Total",
+          year = Target_all$Year,
+          target = Target_all$Percent_on_ART_total * 100,
+          target_lb = Target_all$Percent_on_ART_total_LB * 100,
+          target_ub = Target_all$Percent_on_ART_total_UB * 100
+        ),
+        tibble(
+          group = "Female",
+          year = Target_all$Year,
+          target = Target_all$Percent_on_ART_Female * 100,
+          target_lb = Target_all$Percent_on_ART_Female_LB * 100,
+          target_ub = Target_all$Percent_on_ART_Female_UB * 100
+        ),
+        tibble(
+          group = "Male",
+          year = Target_all$Year,
+          target = Target_all$Percent_on_ART_Male * 100,
+          target_lb = Target_all$Percent_on_ART_Male_LB * 100,
+          target_ub = Target_all$Percent_on_ART_Male_UB * 100
+        )
+      ),
+      vs = bind_rows(
+        tibble(
+          group = "Total",
+          year = Target_all$Year,
+          target = Target_all$Percent_VS_total * 100,
+          target_lb = Target_all$Percent_VS_total_LB * 100,
+          target_ub = Target_all$Percent_VS_total_UB * 100
+        ),
+        tibble(
+          group = "Female",
+          year = Target_all$Year,
+          target = Target_all$Percent_VS_Female * 100,
+          target_lb = Target_all$Percent_VS_Female_LB * 100,
+          target_ub = Target_all$Percent_VS_Female_UB * 100
+        ),
+        tibble(
+          group = "Male",
+          year = Target_all$Year,
+          target = Target_all$Percent_VS_Male * 100,
+          target_lb = Target_all$Percent_VS_Male_LB * 100,
+          target_ub = Target_all$Percent_VS_Male_UB * 100
+        )
+      )
+    )
   )
 }
 
@@ -831,6 +1068,16 @@ ui <- page_navbar(
                 column(3, uiOutput("card_inc")),
                 column(3, uiOutput("card_vs")),
                 column(3, uiOutput("card_art"))
+              ),
+              fluidRow(
+                column(4,
+                       selectInput(
+                         "group",
+                         "Population focus",
+                         choices = c("Total", "Female", "Male"),
+                         selected = "Total"
+                       )
+                )
               ),
               hr(),
               tabsetPanel(
@@ -947,36 +1194,119 @@ server <- function(input, output, session) {
   # Plots ----------------------------------------------------------------------
   output$plot_prev <- renderPlotly({
     req(sim())
-    df <- sim()$outcomes %>% group_by(year, trial) %>% summarize(prev = last(Prevalence) * 100, .groups = "drop")
-    p <- ggplot(df, aes(x = year, y = prev, group = trial)) +
-      geom_line(alpha = 0.25) +
-      stat_summary(fun = mean, geom = "line", linewidth = 1) +
-      stat_summary(fun.min = min, fun.max = max, geom = "ribbon", alpha = 0.08) +
+    df <- sim()$yearly %>% filter(group == input$group)
+    target_df <- sim()$targets$prevalence %>% filter(group == input$group, !is.na(target))
+    p <- ggplot(df, aes(x = year, y = prevalence, group = trial)) +
+      geom_ribbon(
+        data = target_df,
+        aes(ymin = target_lb, ymax = target_ub),
+        inherit.aes = FALSE,
+        fill = "#0072B2",
+        alpha = 0.12
+      ) +
+      geom_line(
+        data = target_df,
+        aes(y = target),
+        inherit.aes = FALSE,
+        color = "#0072B2",
+        linewidth = 1.1,
+        linetype = "dashed"
+      ) +
+      geom_point(
+        data = target_df,
+        aes(y = target),
+        inherit.aes = FALSE,
+        color = "#0072B2",
+        size = 1.6
+      ) +
+      geom_line(alpha = 0.2) +
+      stat_summary(fun = mean, geom = "line", linewidth = 1, color = "#222222") +
       labs(x = "Year", y = "Prevalence (%)") +
       theme_minimal(base_size = 12)
     ggplotly(p)
   })
-  
+
   output$plot_inc <- renderPlotly({
     req(sim())
-    df <- sim()$outcomes %>% group_by(year, trial) %>% summarize(inc = last(Incidence), .groups = "drop")
-    p <- ggplot(df, aes(x = year, y = inc, group = trial)) +
-      geom_line(alpha = 0.25) +
-      stat_summary(fun = mean, geom = "line", linewidth = 1) +
-      stat_summary(fun.min = min, fun.max = max, geom = "ribbon", alpha = 0.08) +
+    df <- sim()$yearly %>% filter(group == input$group)
+    target_df <- sim()$targets$incidence %>% filter(group == input$group, !is.na(target))
+    p <- ggplot(df, aes(x = year, y = incidence, group = trial)) +
+      geom_ribbon(
+        data = target_df,
+        aes(ymin = target_lb, ymax = target_ub),
+        inherit.aes = FALSE,
+        fill = "#D55E00",
+        alpha = 0.12
+      ) +
+      geom_line(
+        data = target_df,
+        aes(y = target),
+        inherit.aes = FALSE,
+        color = "#D55E00",
+        linewidth = 1.1,
+        linetype = "dashed"
+      ) +
+      geom_point(
+        data = target_df,
+        aes(y = target),
+        inherit.aes = FALSE,
+        color = "#D55E00",
+        size = 1.6
+      ) +
+      geom_line(alpha = 0.2) +
+      stat_summary(fun = mean, geom = "line", linewidth = 1, color = "#222222") +
       labs(x = "Year", y = "Incidence (per susceptible, 12m)") +
       theme_minimal(base_size = 12)
     ggplotly(p)
   })
-  
+
   output$plot_art <- renderPlotly({
     req(sim())
-    df <- sim()$outcomes %>% group_by(year, trial) %>% summarize(onart = last(On_ART_total), vs = last(V_total), n = last(N_total), .groups = "drop") %>%
-      mutate(vs_rate = vs / n * 100)
-    p <- ggplot(df, aes(x = year)) +
-      geom_line(aes(y = onart, group = trial), alpha = 0.15) +
-      stat_summary(aes(y = onart), fun = mean, geom = "line", linewidth = 1) +
-      labs(x = "Year", y = "On ART (count)") +
+    df <- sim()$yearly %>% filter(group == input$group)
+    colors <- c("On ART" = "#009E73", "Viral suppression" = "#CC79A7")
+    df_long <- bind_rows(
+      df %>% transmute(trial, year, metric = "On ART", value = on_art_pct),
+      df %>% transmute(trial, year, metric = "Viral suppression", value = vs_pct)
+    ) %>%
+      tidyr::drop_na(value)
+    req(nrow(df_long) > 0)
+    df_long <- df_long %>% mutate(metric = factor(metric, levels = names(colors)))
+
+    target_art_df <- sim()$targets$art %>%
+      filter(group == input$group, !is.na(target)) %>%
+      mutate(metric = factor("On ART", levels = names(colors)))
+    target_vs_df <- sim()$targets$vs %>%
+      filter(group == input$group, !is.na(target)) %>%
+      mutate(metric = factor("Viral suppression", levels = names(colors)))
+    target_df <- bind_rows(target_art_df, target_vs_df)
+    target_df_ribbon <- target_df %>% tidyr::drop_na(target_lb, target_ub)
+
+    p <- ggplot(df_long, aes(x = year, y = value,
+                             group = interaction(metric, trial), color = metric)) +
+      geom_ribbon(
+        data = target_df_ribbon,
+        aes(x = year, ymin = target_lb, ymax = target_ub, fill = metric),
+        inherit.aes = FALSE,
+        alpha = 0.12
+      ) +
+      geom_line(
+        data = target_df,
+        aes(x = year, y = target, color = metric),
+        inherit.aes = FALSE,
+        linewidth = 1.1,
+        linetype = "dashed"
+      ) +
+      geom_point(
+        data = target_df,
+        aes(x = year, y = target, color = metric),
+        inherit.aes = FALSE,
+        size = 1.6
+      ) +
+      geom_line(alpha = 0.15) +
+      stat_summary(aes(color = metric), fun = mean, geom = "line", linewidth = 1.1) +
+      scale_color_manual(values = colors, name = NULL) +
+      scale_fill_manual(values = colors, name = NULL) +
+      labs(x = "Year", y = "Percent of PLHIV (%)") +
       theme_minimal(base_size = 12)
     ggplotly(p)
   })

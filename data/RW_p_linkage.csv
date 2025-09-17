@@ -1,0 +1,5 @@
+,Mean,LB,UB,Sample size,Distribution,Min,Max,Mode,Alpha,Beta
+High-risk,0.115,0.059,0.168,,Triangular,0.059,0.168,0.115,,
+Low-risk,0.175,0.092,0.25,,Triangular,0.092,0.25,0.175,,
+cd4_multi,1.56,1.11,2.2,,,1.11,2.2,1.56,,
+MSM,0.115,0.059,0.25,,Triangular,0.059,0.25,0.115,,
