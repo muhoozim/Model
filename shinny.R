@@ -187,6 +187,16 @@ mat <- function(nrow, ncol, fill = NA_real_) {
   m
 }
 
+scale_percent <- function(x) {
+  if (length(x) == 0L) return(x)
+  if (all(is.na(x))) return(x)
+  x_num <- suppressWarnings(as.numeric(x))
+  if (all(is.na(x_num))) return(x_num)
+  max_val <- suppressWarnings(max(x_num, na.rm = TRUE))
+  if (!is.finite(max_val)) return(x_num)
+  if (max_val <= 1) x_num * 100 else x_num
+}
+
 # ---- Core Simulation ---------------------------------------------------------
 # The function below is a careful rewrite of the original model structure,
 # retaining its compartment definitions and data requirements while fixing
@@ -230,7 +240,82 @@ simulate_model <- function(params,
   p_ARTnotVS       <- params[["RW_p_ARTnotVS.csv"]]
   p_death          <- params[["RW_p_death.csv"]]
   p_reengage       <- params[["RW_p_reengage.csv"]]
-  
+
+  target_all_sel <- Target_all %>%
+    transmute(
+      Year,
+      prev_total = Prevalence,
+      prev_total_lb = Prevalence_LB,
+      prev_total_ub = Prevalence_UB,
+      prev_f = Prevalence_F,
+      prev_f_lb = Prevalence_LB_F,
+      prev_f_ub = Prevalence_UB_F,
+      prev_m = Prevalence_M,
+      prev_m_lb = Prevalence_LB_M,
+      prev_m_ub = Prevalence_UB_M,
+      inc_total = Incidence,
+      inc_total_lb = Incidence_LB,
+      inc_total_ub = Incidence_UB,
+      inc_f = Incidence_F,
+      inc_f_lb = Incidence_F_LB,
+      inc_f_ub = Incidence_F_UB,
+      inc_m = Incidence_M,
+      inc_m_lb = Incidence_M_LB,
+      inc_m_ub = Incidence_M_UB,
+      art_total = Percent_on_ART_total,
+      art_total_lb = Percent_on_ART_total_LB,
+      art_total_ub = Percent_on_ART_total_UB,
+      art_f = Percent_on_ART_Female,
+      art_f_lb = Percent_on_ART_Female_LB,
+      art_f_ub = Percent_on_ART_Female_UB,
+      art_m = Percent_on_ART_Male,
+      art_m_lb = Percent_on_ART_Male_LB,
+      art_m_ub = Percent_on_ART_Male_UB,
+      vs_total = Percent_VS_total,
+      vs_total_lb = Percent_VS_total_LB,
+      vs_total_ub = Percent_VS_total_UB,
+      vs_f = Percent_VS_Female,
+      vs_f_lb = Percent_VS_Female_LB,
+      vs_f_ub = Percent_VS_Female_UB,
+      vs_m = Percent_VS_Male,
+      vs_m_lb = Percent_VS_Male_LB,
+      vs_m_ub = Percent_VS_Male_UB
+    )
+
+  target_new_sel <- Target_new %>%
+    transmute(
+      Year,
+      prev_total_new = Prevalence,
+      prev_total_lb_new = Prevalence_LB,
+      prev_total_ub_new = Prevalence_UB,
+      prev_f_new = Prevalence_F,
+      prev_f_lb_new = Prevalence_LB_F,
+      prev_f_ub_new = Prevalence_UB_F,
+      prev_m_new = Prevalence_M,
+      prev_m_lb_new = Prevalence_LB_M,
+      prev_m_ub_new = Prevalence_UB_M,
+      vs_total_new = Percent_VS_total,
+      vs_total_lb_new = Percent_VS_total_LB,
+      vs_total_ub_new = Percent_VS_total_UB,
+      vs_f_new = Percent_VS_Female,
+      vs_f_lb_new = Percent_VS_Female_LB,
+      vs_f_ub_new = Percent_VS_Female_UB,
+      vs_m_new = Percent_VS_Male,
+      vs_m_lb_new = Percent_VS_Male_LB,
+      vs_m_ub_new = Percent_VS_Male_UB,
+      art_total_new = P_ART_All,
+      art_total_lb_new = P_ART_All_LB,
+      art_total_ub_new = P_ART_All_UB,
+      art_f_new = P_ART_All_F,
+      art_f_lb_new = P_ART_All_F_LB,
+      art_f_ub_new = P_ART_All_F_UB,
+      art_m_new = P_ART_All_M,
+      art_m_lb_new = P_ART_All_M_LB,
+      art_m_ub_new = P_ART_All_M_UB
+    )
+
+  targets_combined <- full_join(target_all_sel, target_new_sel, by = "Year") %>% arrange(Year)
+
   years <- seq(from = start_year, to = end_year, by = 1L)
   nyears <- length(years)
   
@@ -947,93 +1032,93 @@ simulate_model <- function(params,
       prevalence = bind_rows(
         tibble(
           group = "Total",
-          year = Target_all$Year,
-          target = Target_all$Prevalence * 100,
-          target_lb = Target_all$Prevalence_LB * 100,
-          target_ub = Target_all$Prevalence_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$prev_total, targets_combined$prev_total_new)),
+          target_lb = scale_percent(coalesce(targets_combined$prev_total_lb, targets_combined$prev_total_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$prev_total_ub, targets_combined$prev_total_ub_new))
         ),
         tibble(
           group = "Female",
-          year = Target_all$Year,
-          target = Target_all$Prevalence_F * 100,
-          target_lb = Target_all$Prevalence_LB_F * 100,
-          target_ub = Target_all$Prevalence_UB_F * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$prev_f, targets_combined$prev_f_new)),
+          target_lb = scale_percent(coalesce(targets_combined$prev_f_lb, targets_combined$prev_f_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$prev_f_ub, targets_combined$prev_f_ub_new))
         ),
         tibble(
           group = "Male",
-          year = Target_all$Year,
-          target = Target_all$Prevalence_M * 100,
-          target_lb = Target_all$Prevalence_LB_M * 100,
-          target_ub = Target_all$Prevalence_UB_M * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$prev_m, targets_combined$prev_m_new)),
+          target_lb = scale_percent(coalesce(targets_combined$prev_m_lb, targets_combined$prev_m_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$prev_m_ub, targets_combined$prev_m_ub_new))
         )
       ),
       incidence = bind_rows(
         tibble(
           group = "Total",
-          year = Target_all$Year,
-          target = Target_all$Incidence,
-          target_lb = Target_all$Incidence_LB,
-          target_ub = Target_all$Incidence_UB
+          year = targets_combined$Year,
+          target = targets_combined$inc_total,
+          target_lb = targets_combined$inc_total_lb,
+          target_ub = targets_combined$inc_total_ub
         ),
         tibble(
           group = "Female",
-          year = Target_all$Year,
-          target = Target_all$Incidence_F,
-          target_lb = Target_all$Incidence_F_LB,
-          target_ub = Target_all$Incidence_F_UB
+          year = targets_combined$Year,
+          target = targets_combined$inc_f,
+          target_lb = targets_combined$inc_f_lb,
+          target_ub = targets_combined$inc_f_ub
         ),
         tibble(
           group = "Male",
-          year = Target_all$Year,
-          target = Target_all$Incidence_M,
-          target_lb = Target_all$Incidence_M_LB,
-          target_ub = Target_all$Incidence_M_UB
+          year = targets_combined$Year,
+          target = targets_combined$inc_m,
+          target_lb = targets_combined$inc_m_lb,
+          target_ub = targets_combined$inc_m_ub
         )
       ),
       art = bind_rows(
         tibble(
           group = "Total",
-          year = Target_all$Year,
-          target = Target_all$Percent_on_ART_total * 100,
-          target_lb = Target_all$Percent_on_ART_total_LB * 100,
-          target_ub = Target_all$Percent_on_ART_total_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$art_total, targets_combined$art_total_new)),
+          target_lb = scale_percent(coalesce(targets_combined$art_total_lb, targets_combined$art_total_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$art_total_ub, targets_combined$art_total_ub_new))
         ),
         tibble(
           group = "Female",
-          year = Target_all$Year,
-          target = Target_all$Percent_on_ART_Female * 100,
-          target_lb = Target_all$Percent_on_ART_Female_LB * 100,
-          target_ub = Target_all$Percent_on_ART_Female_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$art_f, targets_combined$art_f_new)),
+          target_lb = scale_percent(coalesce(targets_combined$art_f_lb, targets_combined$art_f_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$art_f_ub, targets_combined$art_f_ub_new))
         ),
         tibble(
           group = "Male",
-          year = Target_all$Year,
-          target = Target_all$Percent_on_ART_Male * 100,
-          target_lb = Target_all$Percent_on_ART_Male_LB * 100,
-          target_ub = Target_all$Percent_on_ART_Male_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$art_m, targets_combined$art_m_new)),
+          target_lb = scale_percent(coalesce(targets_combined$art_m_lb, targets_combined$art_m_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$art_m_ub, targets_combined$art_m_ub_new))
         )
       ),
       vs = bind_rows(
         tibble(
           group = "Total",
-          year = Target_all$Year,
-          target = Target_all$Percent_VS_total * 100,
-          target_lb = Target_all$Percent_VS_total_LB * 100,
-          target_ub = Target_all$Percent_VS_total_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$vs_total, targets_combined$vs_total_new)),
+          target_lb = scale_percent(coalesce(targets_combined$vs_total_lb, targets_combined$vs_total_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$vs_total_ub, targets_combined$vs_total_ub_new))
         ),
         tibble(
           group = "Female",
-          year = Target_all$Year,
-          target = Target_all$Percent_VS_Female * 100,
-          target_lb = Target_all$Percent_VS_Female_LB * 100,
-          target_ub = Target_all$Percent_VS_Female_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$vs_f, targets_combined$vs_f_new)),
+          target_lb = scale_percent(coalesce(targets_combined$vs_f_lb, targets_combined$vs_f_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$vs_f_ub, targets_combined$vs_f_ub_new))
         ),
         tibble(
           group = "Male",
-          year = Target_all$Year,
-          target = Target_all$Percent_VS_Male * 100,
-          target_lb = Target_all$Percent_VS_Male_LB * 100,
-          target_ub = Target_all$Percent_VS_Male_UB * 100
+          year = targets_combined$Year,
+          target = scale_percent(coalesce(targets_combined$vs_m, targets_combined$vs_m_new)),
+          target_lb = scale_percent(coalesce(targets_combined$vs_m_lb, targets_combined$vs_m_lb_new)),
+          target_ub = scale_percent(coalesce(targets_combined$vs_m_ub, targets_combined$vs_m_ub_new))
         )
       )
     )
