@@ -1,0 +1,4 @@
+,Mean,LB,UB,Sample size,Distribution,Min,Max,Mode,Alpha,Beta
+Low risk,1,0,8,,Triangular,0,8,1,,
+High risk,40,20,64,,Triangular,20,64,40,,
+MSM,4,1,40,,,2.4,17.6,10,,

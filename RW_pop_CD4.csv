@@ -1,0 +1,13 @@
+﻿,Mean
+Undiagnosed_500,0.34
+Undiagnosed_350_500,0.253
+Undiagnosed_200_350,0.272
+Linked_500,0.391
+Linked_350_500,0.18
+Linked_200_350,0.211
+ART_500,0
+ART_350_500,0.048
+ART_200_350,0.238
+Fail_500,0
+Fail_350_500,0
+Fail_200_350,0
