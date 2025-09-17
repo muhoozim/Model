@@ -399,7 +399,16 @@ simulate_model <- function(params,
     Total[5,1] <- TotalUrbanWomen * sum(89338,67466)  / totalwomen - Total[10,1]
     
     # Remaining groups from Pop
-    if (nrow(Pop) < sgroup) stop("RW_Pop.csv has fewer than sgroup rows")
+    pop_row_count <- nrow(Pop)
+    if (pop_row_count < sgroup) {
+      stop(
+        sprintf(
+          "RW_Pop.csv only has %d subgroup rows but the model was asked to use %d. Update the CSV or lower the `sgroup` setting.",
+          pop_row_count, sgroup
+        ),
+        call. = FALSE
+      )
+    }
     for (s in 11:sgroup) Total[s,1] <- Pop$Total[s]
     
     # Initial prevalence draws (beta distrib by subgroup)
@@ -1205,27 +1214,63 @@ server <- function(input, output, session) {
   iv$add_rule("param_dir", sv_required())
   iv$enable()
   
+  pop_rows <- reactive({
+    path <- file.path(input$param_dir, "RW_Pop.csv")
+    if (!file.exists(path)) return(NA_integer_)
+    tryCatch(
+      {
+        df <- readr::read_csv(path, show_col_types = FALSE, progress = FALSE)
+        nrow(df)
+      },
+      error = function(e) NA_integer_
+    )
+  })
+
+  observeEvent(pop_rows(), {
+    n <- pop_rows()
+    if (!length(n) || is.na(n) || !is.finite(n)) return()
+    current <- input$sgroup
+    if (is.null(current) || is.na(current) || !is.finite(current)) current <- n
+    updateNumericInput(
+      session,
+      "sgroup",
+      min = 1,
+      max = n,
+      value = min(max(1, round(current)), n)
+    )
+  }, ignoreNULL = FALSE)
+
   files_status <- reactive({
     dir <- input$param_dir
     exists <- file.exists(file.path(dir, FILES_REQUIRED))
     tibble(file = FILES_REQUIRED, found = exists)
   })
-  
+
   output$files_status <- renderUI({
     df <- files_status()
     n_ok <- sum(df$found)
+    pop_n <- pop_rows()
     tagList(
       h5("Parameter files:"),
       tags$small(sprintf("%d/%d found in %s", n_ok, nrow(df), input$param_dir)),
-      if (n_ok < nrow(df)) tags$p(class = "text-danger", "Missing files will block a run.")
+      if (n_ok < nrow(df)) tags$p(class = "text-danger", "Missing files will block a run."),
+      if (!is.na(pop_n)) tags$p(class = "text-muted", sprintf("RW_Pop.csv supports up to %d subgroups.", pop_n))
     )
   })
-  
+
   sim <- eventReactive(input$run, {
     validate(need(all(files_status()$found), paste0(
       "Missing files in ", input$param_dir, ". Check the list of required CSVs.")))
-    
+
     params <- read_params(input$param_dir)
+    pop_available <- nrow(params[["RW_Pop.csv"]])
+    validate(need(
+      pop_available >= input$sgroup,
+      sprintf(
+        "RW_Pop.csv only has %d subgroup rows. Reduce \"Subgroups\" or update the CSV to add more groups.",
+        pop_available
+      )
+    ))
     res <- simulate_model(
       params = params,
       trials = input$trials,
